@@ -29,8 +29,7 @@ pub fn from_path(path: &std::path::Path) -> Result<egui::ColorImage, load_image:
 pub fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<Context>>) {
     let res = FileDialog::new()
         .set_location("~")
-        .add_filter("PNG Image", &["png"])
-        .add_filter("JPG Image", &["jpg", "jpeg"])
+        .add_filter("Images", &["png", "jpg", "jpeg"])
         .show_open_single_file();
 
     if let Ok(Some(path)) = res {

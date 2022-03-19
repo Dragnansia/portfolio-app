@@ -70,7 +70,6 @@ impl epi::App for Portfolio {
     }
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     run_native(Box::new(Portfolio::default()), NativeOptions::default());
 }
