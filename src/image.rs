@@ -1,5 +1,12 @@
-use eframe::{egui, epaint::Color32};
+use eframe::{
+    egui::{self, Context},
+    epaint::Color32,
+};
 use load_image::ImageData;
+use native_dialog::FileDialog;
+use std::sync::{mpsc::Sender, Arc, Mutex};
+
+use crate::Response;
 
 pub fn from_path(path: &std::path::Path) -> Result<egui::ColorImage, load_image::Error> {
     let img = load_image::load_path(path)?;
@@ -17,4 +24,27 @@ pub fn from_path(path: &std::path::Path) -> Result<egui::ColorImage, load_image:
     };
 
     Ok(egui::ColorImage { size, pixels })
+}
+
+pub fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<Context>>) {
+    let res = FileDialog::new()
+        .set_location("~")
+        .add_filter("PNG Image", &["png"])
+        .add_filter("JPG Image", &["jpg", "jpeg"])
+        .show_open_single_file();
+
+    if let Ok(Some(path)) = res {
+        let file = path.file_name().unwrap().to_str().unwrap();
+
+        sender
+            .send(Response::Image(
+                context
+                    .lock()
+                    .unwrap()
+                    .load_texture(file, from_path(&path).unwrap()),
+            ))
+            .unwrap();
+    } else {
+        sender.send(Response::Nothing).unwrap();
+    }
 }
