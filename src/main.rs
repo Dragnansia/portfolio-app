@@ -1,5 +1,6 @@
 mod app;
 mod image;
+mod project;
 
 use app::Portfolio;
 use eframe::{run_native, NativeOptions};

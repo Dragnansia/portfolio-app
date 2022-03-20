@@ -1,6 +1,6 @@
 use crate::image::new_image_file_dialog;
 use eframe::{
-    egui::{self, Context, Layout, Window},
+    egui::{self, Context, Layout, Window, Slider},
     epi,
 };
 use std::{
@@ -16,10 +16,21 @@ pub enum Response {
     Nothing,
 }
 
-#[derive(Default)]
 pub struct Portfolio {
     images: Vec<egui::TextureHandle>,
+    max_image_width: f32,
+
     tasks: Vec<(Receiver<Response>, JoinHandle<()>)>,
+}
+
+impl Default for Portfolio {
+    fn default() -> Self {
+        Self {
+            max_image_width: 160f32,
+            images: vec![],
+            tasks: vec![],
+        }
+    }
 }
 
 impl epi::App for Portfolio {
@@ -55,6 +66,8 @@ impl Portfolio {
     fn debug(&mut self, ctx: &Context) {
         Window::new("Portfolio Data").show(ctx, |ui| {
             ui.label(&format!("Worker: {}", self.tasks.len()));
+
+            ui.add(Slider::new(&mut self.max_image_width, 0f32..=1000f32));
         });
     }
 
@@ -76,7 +89,7 @@ impl Portfolio {
                 }
 
                 for image in &self.images {
-                    let img_size = 160.0 * image.size_vec2() / image.size_vec2().y;
+                    let img_size = self.max_image_width * image.size_vec2() / image.size_vec2().y;
                     ui.image(image, img_size);
                 }
             });
