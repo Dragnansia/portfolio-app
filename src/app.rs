@@ -1,6 +1,6 @@
 use crate::image::new_image_file_dialog;
 use eframe::{
-    egui::{self, Context, Layout, Window, Slider},
+    egui::{self, Context, Layout, Slider, Window},
     epi,
 };
 use std::{
