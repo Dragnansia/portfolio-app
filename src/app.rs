@@ -1,23 +1,23 @@
-use crate::image::new_image_file_dialog;
+use crate::{
+    image::{new_image_file_dialog, Image},
+    state::State,
+};
 use eframe::{
-    egui::{self, Context, Layout, Slider, Window},
+    egui::{self, Context, Layout, Slider, Spinner, Window},
     epi,
 };
-use std::{
-    sync::{
-        mpsc::{channel, Receiver},
-        Arc, Mutex,
-    },
-    thread::{self, JoinHandle},
+use std::sync::{
+    mpsc::{channel, Receiver},
+    Arc, Mutex,
 };
+use tokio::task::JoinHandle;
 
 pub enum Response {
-    Image(egui::TextureHandle),
     Nothing,
 }
 
 pub struct Portfolio {
-    images: Vec<egui::TextureHandle>,
+    images: Vec<Arc<Mutex<Image>>>,
     max_image_width: f32,
 
     tasks: Vec<(Receiver<Response>, JoinHandle<()>)>,
@@ -50,9 +50,6 @@ impl Portfolio {
         self.tasks.retain(|t| {
             if let Ok(response) = t.0.try_recv() {
                 match response {
-                    Response::Image(image) => {
-                        self.images.push(image);
-                    }
                     Response::Nothing => {}
                 };
 
@@ -78,23 +75,29 @@ impl Portfolio {
                 if ui.button("Add Image").clicked() {
                     let context = Arc::new(Mutex::new(ui.ctx().clone()));
                     let (sender, receiver) = channel();
+                    let image = Arc::new(Mutex::new(Image::default()));
+                    self.images.push(image.clone());
 
                     self.tasks.push((
                         receiver,
-                        thread::spawn(move || {
-                            // Do this on other thread
-                            new_image_file_dialog(sender, context);
+                        tokio::spawn(async move {
+                            new_image_file_dialog(sender, image, context).await;
                         }),
                     ));
                 }
 
                 for (index, image) in self.images.clone().iter().enumerate() {
-                    let img_size = self.max_image_width * image.size_vec2() / image.size_vec2().y;
-                    ui.image(image, img_size).context_menu(|ui| {
-                        if ui.button("Remove").clicked() {
-                            let _ = self.images.remove(index);
-                        }
-                    });
+                    if image.lock().unwrap().state == State::Loading {
+                        ui.add(Spinner::new().size(25f32));
+                        ui.label(&image.lock().unwrap().name);
+                    } else if let Some(data) = &image.lock().unwrap().data {
+                        let img_size = self.max_image_width * data.size_vec2() / data.size_vec2().y;
+                        ui.image(data, img_size).context_menu(|ui| {
+                            if ui.button("Remove").clicked() {
+                                let _ = self.images.remove(index);
+                            }
+                        });
+                    }
                 }
             });
         });

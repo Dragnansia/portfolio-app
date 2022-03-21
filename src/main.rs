@@ -1,10 +1,12 @@
 mod app;
 mod image;
 mod project;
+mod state;
 
 use app::Portfolio;
 use eframe::{run_native, NativeOptions};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     run_native(Box::new(Portfolio::default()), NativeOptions::default());
 }
