@@ -88,9 +88,13 @@ impl Portfolio {
                     ));
                 }
 
-                for image in &self.images {
+                for (index, image) in self.images.clone().iter().enumerate() {
                     let img_size = self.max_image_width * image.size_vec2() / image.size_vec2().y;
-                    ui.image(image, img_size);
+                    ui.image(image, img_size).context_menu(|ui| {
+                        if ui.button("Remove").clicked() {
+                            let _ = self.images.remove(index);
+                        }
+                    });
                 }
             });
         });
