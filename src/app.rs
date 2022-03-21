@@ -87,16 +87,19 @@ impl Portfolio {
                 }
 
                 for (index, image) in self.images.clone().iter().enumerate() {
-                    if image.lock().unwrap().state == State::Loading {
-                        ui.add(Spinner::new().size(25f32));
-                        ui.label(&image.lock().unwrap().name);
-                    } else if let Some(data) = &image.lock().unwrap().data {
-                        let img_size = self.max_image_width * data.size_vec2() / data.size_vec2().y;
-                        ui.image(data, img_size).context_menu(|ui| {
-                            if ui.button("Remove").clicked() {
-                                let _ = self.images.remove(index);
-                            }
-                        });
+                    if let Ok(image) = image.lock() {
+                        if image.state == State::Loading {
+                            ui.add(Spinner::new().size(25f32));
+                            ui.label(&image.name);
+                        } else if let Some(data) = &image.data {
+                            let img_size =
+                                self.max_image_width * data.size_vec2() / data.size_vec2().y;
+                            ui.image(data, img_size).context_menu(|ui| {
+                                if ui.button("Remove").clicked() {
+                                    let _ = self.images.remove(index);
+                                }
+                            });
+                        }
                     }
                 }
             });
