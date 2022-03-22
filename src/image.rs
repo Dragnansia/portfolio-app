@@ -39,6 +39,14 @@ impl Image {
         self.state = state;
         self
     }
+
+    pub fn new() -> Self {
+        Self {
+            url: "".into(),
+            alt: "".into(),
+            ..Default::default()
+        }
+    }
 }
 
 fn from_path(path: &PathBuf) -> Result<egui::ColorImage, load_image::Error> {

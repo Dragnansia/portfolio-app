@@ -12,6 +12,7 @@ use std::sync::{
 };
 use tokio::task::JoinHandle;
 
+#[derive(Debug, PartialEq)]
 pub enum Response {
     Nothing,
 }
@@ -75,7 +76,7 @@ impl Portfolio {
                 if ui.button("Add Image").clicked() {
                     let context = Arc::new(Mutex::new(ui.ctx().clone()));
                     let (sender, receiver) = channel();
-                    let image = Arc::new(Mutex::new(Image::default()));
+                    let image = Arc::new(Mutex::new(Image::new()));
                     self.images.push(image.clone());
 
                     self.tasks.push((
@@ -87,7 +88,7 @@ impl Portfolio {
                 }
 
                 for (index, image) in self.images.clone().iter().enumerate() {
-                    if let Ok(image) = image.lock() {
+                    if let Ok(mut image) = image.lock() {
                         if image.state == State::Loading {
                             ui.add(Spinner::new().size(25f32));
                             ui.label(&image.name);
@@ -99,6 +100,8 @@ impl Portfolio {
                                     let _ = self.images.remove(index);
                                 }
                             });
+                            ui.label(&image.name);
+                            ui.text_edit_singleline(&mut image.alt);
                         }
                     }
                 }
