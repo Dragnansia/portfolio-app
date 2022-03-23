@@ -1,11 +1,14 @@
 use crate::{
     image::{new_image_file_dialog, Image},
+    project::Project,
     state::State,
 };
 use eframe::{
     egui::{self, Context, Layout, Slider, Spinner, Window},
     epi,
 };
+use futures::TryStreamExt;
+use mongodb::{options::ClientOptions, Client, Database};
 use std::sync::{
     mpsc::{channel, Receiver},
     Arc, Mutex,
@@ -20,18 +23,11 @@ pub enum Response {
 pub struct Portfolio {
     images: Vec<Arc<Mutex<Image>>>,
     max_image_width: f32,
+    projects: Vec<Project>,
 
     tasks: Vec<(Receiver<Response>, JoinHandle<()>)>,
-}
 
-impl Default for Portfolio {
-    fn default() -> Self {
-        Self {
-            max_image_width: 160f32,
-            images: vec![],
-            tasks: vec![],
-        }
-    }
+    db: Database,
 }
 
 impl epi::App for Portfolio {
@@ -39,6 +35,7 @@ impl epi::App for Portfolio {
         self.check_tasks();
         self.images(ctx);
         self.debug(ctx);
+        self.projects(ctx);
     }
 
     fn name(&self) -> &str {
@@ -47,6 +44,38 @@ impl epi::App for Portfolio {
 }
 
 impl Portfolio {
+    pub async fn new() -> Self {
+        let client = Self::connect_to_database().await.unwrap();
+
+        let db = client.database("portfolio");
+        let projects = Self::projects_list(&db).await;
+
+        Self {
+            max_image_width: 160f32,
+            images: vec![],
+            tasks: vec![],
+            projects,
+            db,
+        }
+    }
+
+    async fn connect_to_database() -> Result<Client, mongodb::error::Error> {
+        let url = "mongodb://localhost:27017";
+        let options = ClientOptions::parse(url).await?;
+
+        Client::with_options(options)
+    }
+
+    async fn projects_list(db: &Database) -> Vec<Project> {
+        db.collection::<Project>("projects")
+            .find(None, None)
+            .await
+            .unwrap()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap()
+    }
+
     fn check_tasks(&mut self) {
         self.tasks.retain(|t| {
             if let Ok(response) = t.0.try_recv() {
@@ -106,6 +135,16 @@ impl Portfolio {
                     }
                 }
             });
+        });
+    }
+
+    fn projects(&mut self, ctx: &Context) {
+        Window::new("projects").show(ctx, |ui| {
+            for project in &mut self.projects {
+                ui.label(&project.name);
+                ui.text_edit_singleline(&mut project.description);
+                ui.add_space(30f32);
+            }
         });
     }
 }
