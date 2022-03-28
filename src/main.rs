@@ -1,5 +1,6 @@
 mod app;
 mod image;
+mod link;
 mod project;
 mod state;
 

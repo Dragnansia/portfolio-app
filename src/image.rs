@@ -6,8 +6,10 @@ use eframe::{
 use load_image::ImageData;
 use native_dialog::FileDialog;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::sync::{mpsc::Sender, Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{mpsc::Sender, Arc, Mutex},
+};
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Image {

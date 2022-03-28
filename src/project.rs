@@ -1,4 +1,4 @@
-use crate::image::Image;
+use crate::{image::Image, link::Link};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Default, Clone)]
@@ -7,14 +7,7 @@ pub struct Project {
     pub name: String,
     pub description: String,
     pub images: Vec<Image>,
-    pub links: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, Default, Clone)]
-pub struct Links {
-    pub url: String,
-    pub icon: String,
-    pub name: String,
+    pub links: Vec<Link>,
 }
 
 impl PartialEq for Project {
