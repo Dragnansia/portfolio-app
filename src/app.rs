@@ -1,41 +1,44 @@
 use crate::{
     image::{new_image_file_dialog, Image},
     project::Project,
-    state::State,
 };
 use eframe::{
-    egui::{self, Context, Layout, Slider, Spinner, Window},
+    egui::{self, CollapsingHeader, Context, Layout, Slider, Window},
     epi,
 };
 use futures::TryStreamExt;
-use mongodb::{options::ClientOptions, Client, Database};
+use mongodb::{bson::doc, options::ClientOptions, Client, Database};
 use std::sync::{
     mpsc::{channel, Receiver},
     Arc, Mutex,
 };
 use tokio::task::JoinHandle;
 
+type Tasks = Vec<(Receiver<Response>, JoinHandle<()>)>;
+
 #[derive(Debug, PartialEq)]
 pub enum Response {
     Nothing,
+    Image(Image),
+    Error(String),
 }
 
 pub struct Portfolio {
-    images: Vec<Arc<Mutex<Image>>>,
     max_image_width: f32,
     projects: Vec<Project>,
-
-    tasks: Vec<(Receiver<Response>, JoinHandle<()>)>,
-
+    project_id: Option<usize>,
+    tasks: Tasks,
     db: Database,
+
+    errors: Vec<String>,
 }
 
 impl epi::App for Portfolio {
     fn update(&mut self, ctx: &egui::Context, _: &epi::Frame) {
         self.check_tasks();
-        self.images(ctx);
-        self.debug(ctx);
-        self.projects(ctx);
+        self.debug_window(ctx);
+        self.projects_window(ctx);
+        self.project_window(ctx);
     }
 
     fn name(&self) -> &str {
@@ -44,7 +47,7 @@ impl epi::App for Portfolio {
 }
 
 impl Portfolio {
-    pub async fn new() -> Self {
+    pub async fn new() -> Portfolio {
         let client = Self::connect_to_database().await.unwrap();
 
         let db = client.database("portfolio");
@@ -52,8 +55,9 @@ impl Portfolio {
 
         Self {
             max_image_width: 160f32,
-            images: vec![],
             tasks: vec![],
+            errors: vec![],
+            project_id: None,
             projects,
             db,
         }
@@ -81,6 +85,15 @@ impl Portfolio {
             if let Ok(response) = t.0.try_recv() {
                 match response {
                     Response::Nothing => {}
+                    Response::Image(img) => {
+                        if let Some(index) = self.project_id {
+                            let project = &mut self.projects[index];
+                            project.images.push(img);
+                        }
+                    }
+                    Response::Error(err) => {
+                        self.errors.push(err);
+                    }
                 };
 
                 false
@@ -90,61 +103,111 @@ impl Portfolio {
         });
     }
 
-    fn debug(&mut self, ctx: &Context) {
+    fn debug_window(&mut self, ctx: &Context) {
         Window::new("Portfolio Data").show(ctx, |ui| {
-            ui.label(&format!("Worker: {}", self.tasks.len()));
+            CollapsingHeader::new("Datas").show(ui, |ui| {
+                ui.label(&format!("Worker: {}", self.tasks.len()));
+                ui.add(Slider::new(&mut self.max_image_width, 0f32..=1000f32));
+            });
 
-            ui.add(Slider::new(&mut self.max_image_width, 0f32..=1000f32));
-        });
-    }
-
-    fn images(&mut self, ctx: &Context) {
-        Window::new("Images").show(ctx, |ui| {
-            let layout = Layout::top_down(eframe::emath::Align::Center);
-            ui.with_layout(layout, |ui| {
-                if ui.button("Add Image").clicked() {
-                    let context = Arc::new(Mutex::new(ui.ctx().clone()));
-                    let (sender, receiver) = channel();
-                    let image = Arc::new(Mutex::new(Image::new()));
-                    self.images.push(image.clone());
-
-                    self.tasks.push((
-                        receiver,
-                        tokio::spawn(async move {
-                            new_image_file_dialog(sender, image, context).await;
-                        }),
-                    ));
-                }
-
-                for (index, image) in self.images.clone().iter().enumerate() {
-                    if let Ok(mut image) = image.lock() {
-                        if image.state == State::Loading {
-                            ui.add(Spinner::new().size(25f32));
-                            ui.label(&image.name);
-                        } else if let Some(data) = &image.data {
-                            let img_size =
-                                self.max_image_width * data.size_vec2() / data.size_vec2().y;
-                            ui.image(data, img_size).context_menu(|ui| {
-                                if ui.button("Remove").clicked() {
-                                    let _ = self.images.remove(index);
-                                }
-                            });
-                            ui.label(&image.name);
-                            ui.text_edit_singleline(&mut image.alt);
-                        }
-                    }
+            CollapsingHeader::new("Errors").show(ui, |ui| {
+                for err in &self.errors {
+                    ui.label(err);
                 }
             });
         });
     }
 
-    fn projects(&mut self, ctx: &Context) {
+    fn images_window(task: &mut Tasks, width: f32, project: &mut Project, ctx: &Context) {
+        let layout = Layout::top_down(eframe::emath::Align::Center);
+        Window::new("Project Image(s)").show(ctx, |ui| {
+            ui.with_layout(layout, |ui| {
+                if ui.button("Add Image").clicked() {
+                    let context = Arc::new(Mutex::new(ui.ctx().clone()));
+                    let (sender, receiver) = channel();
+
+                    task.push((
+                        receiver,
+                        tokio::spawn(async move {
+                            new_image_file_dialog(sender, context).await;
+                        }),
+                    ));
+                }
+
+                let images = &mut project.images;
+                images.retain_mut(|image| {
+                    let data = image.data.as_ref().unwrap();
+
+                    let img_size = width * data.size_vec2() / data.size_vec2().y;
+                    let mut is_click = false;
+                    ui.image(data, img_size).context_menu(|ui| {
+                        is_click = ui.button("Remove").clicked();
+                    });
+                    ui.label(&image.name);
+                    ui.text_edit_singleline(&mut image.alt);
+
+                    !is_click
+                });
+            });
+        });
+    }
+
+    fn projects_window(&mut self, ctx: &Context) {
         Window::new("projects").show(ctx, |ui| {
-            for project in &mut self.projects {
-                ui.label(&project.name);
-                ui.text_edit_singleline(&mut project.description);
-                ui.add_space(30f32);
+            for (index, project) in &mut self.projects.iter().enumerate() {
+                if ui.button(&project.name).clicked() {
+                    self.project_id = Some(index);
+                }
             }
         });
+    }
+
+    fn project_window(&mut self, ctx: &Context) {
+        if let Some(index) = self.project_id {
+            let project = self.projects.get_mut(index).unwrap();
+            Self::images_window(&mut self.tasks, self.max_image_width, project, ctx);
+
+            Window::new("Select Project").show(ctx, |ui| {
+                ui.label(&format!("{:?}", project.id));
+                ui.add_space(5f32);
+
+                ui.horizontal(|ui| {
+                    ui.label("Name:");
+                    ui.text_edit_singleline(&mut project.name)
+                });
+                ui.add_space(3f32);
+
+                ui.label("Description:");
+                ui.text_edit_multiline(&mut project.description);
+
+                ui.add_space(15f32);
+                if ui.button("Update").clicked() {
+                    let collection = self.db.collection::<Project>("projects");
+                    let (sender, receiver) = channel();
+                    let project = project.clone();
+
+                    self.tasks.push((
+                        receiver,
+                        tokio::spawn(async move {
+                            let res = collection
+                                .update_one(
+                                    doc! { "_id": project.id },
+                                    doc! { "$set": { "name": project.name, "description": project.description } },
+                                    None,
+                                )
+                                .await;
+
+                            if let Some(err) = res.err() {
+                                sender
+                                    .send(Response::Error(format!("{:#?}", err.kind)))
+                                    .unwrap();
+                            } else {
+                                sender.send(Response::Nothing).unwrap();
+                            }
+                        }),
+                    ));
+                }
+            });
+        }
     }
 }

@@ -1,9 +1,11 @@
 use crate::{image::Image, link::Link};
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Project {
-    pub id: u64,
+    #[serde(skip_serializing, rename = "_id")]
+    pub id: ObjectId,
     pub name: String,
     pub description: String,
     pub images: Vec<Image>,

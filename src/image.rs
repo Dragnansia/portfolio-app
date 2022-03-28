@@ -1,4 +1,4 @@
-use crate::{app::Response, state::State};
+use crate::app::Response;
 use eframe::{
     egui::{self, Context},
     epaint::Color32,
@@ -6,6 +6,7 @@ use eframe::{
 use load_image::ImageData;
 use native_dialog::FileDialog;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Formatter};
 use std::{
     path::PathBuf,
     sync::{mpsc::Sender, Arc, Mutex},
@@ -17,11 +18,21 @@ pub struct Image {
     pub alt: String,
 
     #[serde(skip)]
-    pub state: State,
-    #[serde(skip)]
     pub data: Option<egui::TextureHandle>,
     #[serde(skip)]
     pub name: String,
+}
+
+impl PartialEq for Image {
+    fn eq(&self, other: &Self) -> bool {
+        self.url == other.url && self.alt == other.alt
+    }
+}
+
+impl Debug for Image {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "url: {}, alt: {}", self.url, self.alt)
+    }
 }
 
 impl Default for Image {
@@ -29,7 +40,6 @@ impl Default for Image {
         Self {
             url: "/proxy-image.jpg".into(),
             alt: "No image for project".into(),
-            state: State::None,
             data: None,
             name: String::new(),
         }
@@ -37,11 +47,6 @@ impl Default for Image {
 }
 
 impl Image {
-    pub fn with_state(&mut self, state: State) -> &mut Self {
-        self.state = state;
-        self
-    }
-
     pub fn new() -> Self {
         Self {
             url: "".into(),
@@ -69,27 +74,24 @@ fn from_path(path: &PathBuf) -> Result<egui::ColorImage, load_image::Error> {
     Ok(egui::ColorImage { size, pixels })
 }
 
-pub async fn new_image_file_dialog(
-    sender: Sender<Response>,
-    image: Arc<Mutex<Image>>,
-    context: Arc<Mutex<Context>>,
-) {
+pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<Context>>) {
     let res = FileDialog::new()
         .set_location("~")
         .add_filter("Images", &["png", "jpg", "jpeg"])
         .show_open_single_file();
 
+    let mut image = Image::new();
     if let Ok(Some(path)) = res {
         let file = path.file_name().unwrap().to_str().unwrap();
-        image.lock().unwrap().with_state(State::Loading).name = file.into();
+        image.name = file.to_string();
         let data = context
             .lock()
             .unwrap()
             .load_texture(file, from_path(&path).unwrap());
 
-        image.lock().unwrap().data = Some(data);
+        image.data = Some(data);
+        sender.send(Response::Image(image)).unwrap();
+    } else {
+        sender.send(Response::Nothing).unwrap();
     }
-
-    image.lock().unwrap().with_state(State::Loaded);
-    sender.send(Response::Nothing).unwrap();
 }

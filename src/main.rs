@@ -1,8 +1,9 @@
+#![feature(vec_retain_mut)]
+
 mod app;
 mod image;
 mod link;
 mod project;
-mod state;
 
 use app::Portfolio;
 use eframe::{run_native, NativeOptions};
