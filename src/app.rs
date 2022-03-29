@@ -1,5 +1,6 @@
 use crate::{
     image::{new_image_file_dialog, Image},
+    link::{Link, LinkIcon},
     project::Project,
 };
 use eframe::{
@@ -20,6 +21,7 @@ type Tasks = Vec<(Receiver<Response>, JoinHandle<()>)>;
 pub enum Response {
     Nothing,
     Image(Image),
+    Project(Project),
     Error(String),
 }
 
@@ -94,6 +96,9 @@ impl Portfolio {
                     Response::Error(err) => {
                         self.errors.push(err);
                     }
+                    Response::Project(project) => {
+                        self.projects.push(project);
+                    }
                 };
 
                 false
@@ -141,7 +146,10 @@ impl Portfolio {
                     let img_size = width * data.size_vec2() / data.size_vec2().y;
                     let mut is_click = false;
                     ui.image(data, img_size).context_menu(|ui| {
-                        is_click = ui.button("Remove").clicked();
+                        if ui.button("Remove").clicked() {
+                            is_click = true;
+                            ui.close_menu();
+                        }
                     });
                     ui.label(&image.name);
                     ui.text_edit_singleline(&mut image.alt);
@@ -152,20 +160,103 @@ impl Portfolio {
         });
     }
 
+    fn links_window(project: &mut Project, ctx: &Context) {
+        Window::new("Project Link(s)").show(ctx, |ui| {
+            let layout = Layout::top_down(eframe::emath::Align::Center);
+            ui.with_layout(layout, |ui| {
+                ui.menu_button("Add new Link", |ui| {
+                    if ui.button("Image").clicked() {
+                        project.links.push(Link {
+                            url: String::new(),
+                            icon: LinkIcon::Image(String::new()),
+                        });
+
+                        ui.close_menu();
+                    }
+
+                    if ui.button("FontAwesome").clicked() {
+                        project.links.push(Link {
+                            url: String::new(),
+                            icon: LinkIcon::FontAwesome(String::new()),
+                        });
+
+                        ui.close_menu();
+                    }
+                });
+            });
+
+            ui.add_space(10f32);
+
+            let links = &mut project.links;
+            links.retain_mut(|link| {
+                ui.horizontal(|ui| {
+                    ui.label("Url:");
+                    ui.text_edit_singleline(&mut link.url);
+                });
+
+                match &mut link.icon {
+                    LinkIcon::Image(link) => {
+                        ui.horizontal(|ui| {
+                            ui.label("Image link:");
+                            ui.text_edit_singleline(link);
+                        });
+                    }
+                    LinkIcon::FontAwesome(icon) => {
+                        ui.horizontal(|ui| {
+                            ui.label("FontAwesome icon:");
+                            ui.text_edit_singleline(icon);
+                        });
+                    }
+                }
+
+                let mut is_click = false;
+                if ui.button("Remove").clicked() {
+                    is_click = true;
+                }
+
+                ui.add_space(5f32);
+
+                !is_click
+            });
+        });
+    }
+
     fn projects_window(&mut self, ctx: &Context) {
         Window::new("projects").show(ctx, |ui| {
-            for (index, project) in &mut self.projects.iter().enumerate() {
-                if ui.button(&project.name).clicked() {
-                    self.project_id = Some(index);
+            let layout = Layout::top_down_justified(eframe::emath::Align::Center);
+            ui.with_layout(layout, |ui| {
+                if ui.button("Add new project").clicked() {
+                    let (sender, receiver) = channel();
+                    let collection = self.db.collection::<Project>("projects");
+
+                    self.tasks.push((
+                        receiver,
+                        tokio::spawn(async move {
+                            let project = Project::new();
+                            collection.insert_one(project.clone(), None).await.unwrap();
+
+                            sender.send(Response::Project(project)).unwrap();
+                        }),
+                    ));
                 }
-            }
+
+                ui.add_space(15f32);
+
+                for (index, project) in &mut self.projects.iter().enumerate() {
+                    if ui.button(&project.name).clicked() {
+                        self.project_id = Some(index);
+                    }
+                }
+            });
         });
     }
 
     fn project_window(&mut self, ctx: &Context) {
         if let Some(index) = self.project_id {
             let project = self.projects.get_mut(index).unwrap();
+
             Self::images_window(&mut self.tasks, self.max_image_width, project, ctx);
+            Self::links_window(project, ctx);
 
             Window::new("Select Project").show(ctx, |ui| {
                 ui.label(&format!("{:?}", project.id));
@@ -190,9 +281,9 @@ impl Portfolio {
                         receiver,
                         tokio::spawn(async move {
                             let res = collection
-                                .update_one(
+                                .find_one_and_update(
                                     doc! { "_id": project.id },
-                                    doc! { "$set": { "name": project.name, "description": project.description } },
+                                    doc! { "$set": project.doc() },
                                     None,
                                 )
                                 .await;
