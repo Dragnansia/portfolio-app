@@ -8,7 +8,11 @@ use eframe::{
     epi,
 };
 use futures::TryStreamExt;
-use mongodb::{bson::doc, options::ClientOptions, Client, Database};
+use mongodb::{
+    bson::{doc, oid::ObjectId},
+    options::ClientOptions,
+    Client, Database,
+};
 use std::sync::{
     mpsc::{channel, Receiver},
     Arc, Mutex,
@@ -22,6 +26,7 @@ pub enum Response {
     Nothing,
     Image(Image),
     Project(Project),
+    RemoveProject(ObjectId),
     Error(String),
 }
 
@@ -99,6 +104,18 @@ impl Portfolio {
                     Response::Project(project) => {
                         self.projects.push(project);
                     }
+                    Response::RemoveProject(id) => {
+                        let pos = self.projects.iter().position(|p| p.id == id);
+                        if let Some(pos) = pos {
+                            self.projects.remove(pos);
+
+                            if let Some(project_id) = self.project_id {
+                                if pos == project_id {
+                                    self.project_id = None;
+                                }
+                            }
+                        }
+                    }
                 };
 
                 false
@@ -148,6 +165,10 @@ impl Portfolio {
                     ui.image(data, img_size).context_menu(|ui| {
                         if ui.button("Remove").clicked() {
                             is_click = true;
+                            ui.close_menu();
+                        }
+
+                        if ui.button("Upload").clicked() {
                             ui.close_menu();
                         }
                     });
@@ -243,9 +264,40 @@ impl Portfolio {
                 ui.add_space(15f32);
 
                 for (index, project) in &mut self.projects.iter().enumerate() {
-                    if ui.button(&project.name).clicked() {
+                    let but = ui.button(&project.name);
+                    if but.clicked() {
                         self.project_id = Some(index);
                     }
+
+                    but.context_menu(|ui| {
+                        if ui.button("Remove").clicked() {
+                            let (sender, receiver) = channel();
+                            let collection = self.db.collection::<Project>("projects");
+                            let project = project.clone();
+
+                            self.tasks.push((
+                                receiver,
+                                tokio::spawn(async move {
+                                    let res = collection
+                                        .find_one_and_delete(
+                                            doc! {
+                                                "_id": project.id
+                                            },
+                                            None,
+                                        )
+                                        .await;
+
+                                    if let Err(error) = res {
+                                        sender.send(Response::Error(error.to_string())).unwrap();
+                                    } else {
+                                        sender.send(Response::RemoveProject(project.id)).unwrap();
+                                    }
+                                }),
+                            ));
+
+                            ui.close_menu();
+                        }
+                    });
                 }
             });
         });
