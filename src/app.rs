@@ -1,5 +1,5 @@
 use crate::{
-    image::{new_image_file_dialog, Image},
+    image::{new_image_file_dialog, upload, Image},
     link::{Link, LinkIcon},
     project::Project,
 };
@@ -27,6 +27,7 @@ pub enum Response {
     Image(Image),
     Project(Project),
     RemoveProject(ObjectId),
+    UpdateImage(Image),
     Error(String),
 }
 
@@ -116,6 +117,9 @@ impl Portfolio {
                             }
                         }
                     }
+                    Response::UpdateImage(image) => {
+                        println!("This image is upload: {}", image.name);
+                    }
                 };
 
                 false
@@ -169,6 +173,16 @@ impl Portfolio {
                         }
 
                         if ui.button("Upload").clicked() {
+                            let (sender, receiver) = channel();
+                            let image = image.clone();
+
+                            task.push((
+                                receiver,
+                                tokio::spawn(async move {
+                                    upload(sender, image).await;
+                                }),
+                            ));
+
                             ui.close_menu();
                         }
                     });

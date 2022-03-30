@@ -10,5 +10,17 @@ serde = "1.0.136"
 native-dialog = "0.6.3"
 serde_json = "1.0.79"
 load_image = "2.16.2"
-tokio = "1.17.0"
 futures = "0.3.21"
+const_env = "0.1.2"
+
+[dependencies.tokio]
+version = "1.17.0"
+features = ["full"]
+
+[dependencies.tokio-util]
+version = "0.7.1"
+features= ["codec"]
+
+[dependencies.reqwest]
+version = "0.11.10"
+features = ["multipart", "stream"]
