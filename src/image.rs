@@ -6,12 +6,21 @@ use eframe::{
 };
 use load_image::ImageData;
 use native_dialog::FileDialog;
+use regex::Regex;
 use reqwest::{
     multipart::{self, Part},
     Body, Client,
 };
+use rustc_serialize::{
+    base64::{ToBase64, MIME},
+    hex::ToHex,
+};
 use serde::{Deserialize, Serialize};
-use std::fmt::{Debug, Formatter};
+use std::{
+    fmt::{Debug, Formatter},
+    fs,
+    io::Read,
+};
 use std::{
     path::PathBuf,
     sync::{mpsc::Sender, Arc, Mutex},
@@ -27,6 +36,7 @@ const API_KEY: &str = "API_KEY";
 pub struct Image {
     pub url: String,
     pub alt: String,
+    pub base64: String,
 
     #[serde(skip)]
     pub data: Option<egui::TextureHandle>,
@@ -59,6 +69,7 @@ impl Default for Image {
             data: None,
             name: String::new(),
             path: String::new(),
+            base64: String::new(),
         }
     }
 }
@@ -81,7 +92,7 @@ fn from_path(path: &PathBuf) -> Result<egui::ColorImage, load_image::Error> {
             .iter()
             .map(|el| Color32::from_rgb(el.r, el.g, el.b))
             .collect(),
-        load_image::ImageData::RGBA8(p) => p
+        ImageData::RGBA8(p) => p
             .iter()
             .map(|el| Color32::from_rgba_premultiplied(el.r, el.g, el.b, el.a))
             .collect(),
@@ -89,6 +100,31 @@ fn from_path(path: &PathBuf) -> Result<egui::ColorImage, load_image::Error> {
     };
 
     Ok(egui::ColorImage { size, pixels })
+}
+
+pub fn file_type(hex: &str) -> &str {
+    if Regex::new(r"^ffd8ffe0").unwrap().is_match(hex) {
+        return "jpeg";
+    } else if Regex::new(r"^89504e47").unwrap().is_match(hex) {
+        return "png";
+    } else if Regex::new(r"^47494638").unwrap().is_match(hex) {
+        return "gif";
+    }
+
+    panic!("Not valid type file");
+}
+
+pub fn base64_from_file(path: &PathBuf) -> String {
+    let mut file = fs::File::open(path).unwrap();
+    let mut vec = vec![];
+
+    let _ = file.read_to_end(&mut vec);
+    let base64 = vec.to_base64(MIME);
+    let hex = vec.to_hex();
+
+    let ext = file_type(&hex);
+
+    return format!("data:image/{};base64,{}", ext, base64.replace("\r\n", ""));
 }
 
 pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<Context>>) {
@@ -103,6 +139,7 @@ pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<
 
         image.path = path.to_str().unwrap().to_string();
         image.name = file.to_string();
+        image.base64 = base64_from_file(&path);
 
         let data = context
             .lock()
