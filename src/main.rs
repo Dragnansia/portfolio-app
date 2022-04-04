@@ -1,5 +1,3 @@
-#![feature(vec_retain_mut)]
-
 mod app;
 mod image;
 mod link;

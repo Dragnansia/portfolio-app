@@ -1,10 +1,6 @@
 use crate::{app::Response, response::ImgbbResponse};
 use const_env::from_env;
-use eframe::{
-    egui::{self, Context},
-    epaint::Color32,
-};
-use load_image::ImageData;
+use eframe::egui::{self, Context};
 use native_dialog::FileDialog;
 use regex::Regex;
 use reqwest::{
@@ -16,11 +12,7 @@ use rustc_serialize::{
     hex::ToHex,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::{Debug, Formatter},
-    fs,
-    io::Read,
-};
+use std::fmt::{Debug, Formatter};
 use std::{
     path::PathBuf,
     sync::{mpsc::Sender, Arc, Mutex},
@@ -84,22 +76,18 @@ impl Image {
     }
 }
 
-fn from_path(path: &PathBuf) -> Result<egui::ColorImage, load_image::Error> {
-    let img = load_image::load_path(path)?;
-    let size = [img.width, img.height];
-    let pixels: Vec<Color32> = match img.bitmap {
-        ImageData::RGB8(p) => p
-            .iter()
-            .map(|el| Color32::from_rgb(el.r, el.g, el.b))
-            .collect(),
-        ImageData::RGBA8(p) => p
-            .iter()
-            .map(|el| Color32::from_rgba_premultiplied(el.r, el.g, el.b, el.a))
-            .collect(),
-        _ => vec![],
-    };
+fn from_path(path: &PathBuf) -> Result<(Vec<u8>, egui::ColorImage), image::ImageError> {
+    let image = image::io::Reader::open(&path)?.decode()?;
+    let size = [image.width() as _, image.height() as _];
 
-    Ok(egui::ColorImage { size, pixels })
+    let image_buffer = image.to_rgb8();
+    let flat_samples = image_buffer.as_flat_samples();
+    let pixels = flat_samples.as_slice();
+
+    Ok((
+        pixels.to_vec(),
+        egui::ColorImage::from_rgba_unmultiplied(size, pixels),
+    ))
 }
 
 pub fn file_type(hex: &str) -> &str {
@@ -114,17 +102,13 @@ pub fn file_type(hex: &str) -> &str {
     panic!("Not valid type file");
 }
 
-pub fn base64_from_file(path: &PathBuf) -> String {
-    let mut file = fs::File::open(path).unwrap();
-    let mut vec = vec![];
-
-    let _ = file.read_to_end(&mut vec);
+pub fn base64_from_vec(vec: Vec<u8>) -> String {
     let base64 = vec.to_base64(MIME);
     let hex = vec.to_hex();
 
     let ext = file_type(&hex);
-
-    return format!("data:image/{};base64,{}", ext, base64.replace("\r\n", ""));
+    let base64 = base64.replace("\r\n", "");
+    return format!("data:image/{};base64,{}", ext, base64);
 }
 
 pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<Context>>) {
@@ -139,12 +123,11 @@ pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<
 
         image.path = path.to_str().unwrap().to_string();
         image.name = file.to_string();
-        image.base64 = base64_from_file(&path);
 
-        let data = context
-            .lock()
-            .unwrap()
-            .load_texture(file, from_path(&path).unwrap());
+        let (base64, data) = from_path(&path).unwrap();
+        image.base64 = base64_from_vec(base64);
+
+        let data = context.lock().unwrap().load_texture(file, data);
 
         image.data = Some(data);
         sender.send(Response::Image(image)).unwrap();
