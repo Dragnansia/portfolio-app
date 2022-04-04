@@ -3,6 +3,7 @@ use crate::{
     link::{Link, LinkIcon},
     project::Project,
 };
+use const_env::from_env;
 use eframe::{
     egui::{self, CollapsingHeader, Context, Layout, Slider, Window},
     epi,
@@ -20,6 +21,9 @@ use std::sync::{
 use tokio::task::JoinHandle;
 
 type Tasks = Vec<(Receiver<Response>, JoinHandle<()>)>;
+
+#[from_env]
+const MONGO_URL: &str = "mongodb://localhost:27017";
 
 #[derive(Debug, PartialEq)]
 pub enum Response {
@@ -72,8 +76,7 @@ impl Portfolio {
     }
 
     async fn connect_to_database() -> Result<Client, mongodb::error::Error> {
-        let url = "mongodb://localhost:27017";
-        let options = ClientOptions::parse(url).await?;
+        let options = ClientOptions::parse(MONGO_URL).await?;
 
         Client::with_options(options)
     }
