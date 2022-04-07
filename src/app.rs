@@ -1,5 +1,5 @@
 use crate::{
-    image::{new_image_file_dialog, upload, Image},
+    image::{new_image_file_dialog, Image},
     link::{Link, LinkIcon},
     project::Project,
 };
@@ -31,7 +31,6 @@ pub enum Response {
     Image(Image),
     Project(Project),
     RemoveProject(ObjectId),
-    UpdateImage(Image),
     Error(String),
 }
 
@@ -120,9 +119,6 @@ impl Portfolio {
                             }
                         }
                     }
-                    Response::UpdateImage(image) => {
-                        println!("This image is upload: {}", image.name);
-                    }
                 };
 
                 false
@@ -165,27 +161,13 @@ impl Portfolio {
 
                 let images = &mut project.images;
                 images.retain_mut(|image| {
-                    let data = image.data.as_ref().unwrap();
+                    let data = image.egui_data.as_ref().unwrap();
 
                     let img_size = width * data.size_vec2() / data.size_vec2().y;
                     let mut is_click = false;
                     ui.image(data, img_size).context_menu(|ui| {
                         if ui.button("Remove").clicked() {
                             is_click = true;
-                            ui.close_menu();
-                        }
-
-                        if ui.button("Upload").clicked() {
-                            let (sender, receiver) = channel();
-                            let image = image.clone();
-
-                            task.push((
-                                receiver,
-                                tokio::spawn(async move {
-                                    upload(sender, image).await;
-                                }),
-                            ));
-
                             ui.close_menu();
                         }
                     });

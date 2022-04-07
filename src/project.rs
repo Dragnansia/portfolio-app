@@ -45,7 +45,7 @@ impl Project {
                     .map(|i| {
                         let mut doc = Document::new();
                         doc.insert("name", Bson::String(i.name.clone()));
-                        doc.insert("url", Bson::String(i.url.clone()));
+                        doc.insert("data", Bson::String(i.data.clone()));
 
                         Bson::Document(doc)
                     })

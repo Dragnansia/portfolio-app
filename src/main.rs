@@ -2,7 +2,6 @@ mod app;
 mod image;
 mod link;
 mod project;
-mod response;
 
 use app::Portfolio;
 use eframe::{run_native, NativeOptions};

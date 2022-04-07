@@ -1,12 +1,7 @@
-use crate::{app::Response, response::ImgbbResponse};
-use const_env::from_env;
+use crate::app::Response;
 use eframe::egui::{self, Context};
 use native_dialog::FileDialog;
 use regex::Regex;
-use reqwest::{
-    multipart::{self, Part},
-    Body, Client,
-};
 use rustc_serialize::{
     base64::{ToBase64, MIME},
     hex::ToHex,
@@ -17,21 +12,14 @@ use std::{
     path::PathBuf,
     sync::{mpsc::Sender, Arc, Mutex},
 };
-use tokio::fs::File;
-use tokio_util::codec::{BytesCodec, FramedRead};
-
-const IMGBB_UPLOAD_URL: &str = "https://api.imgbb.com/1/upload?key=";
-#[from_env]
-const API_KEY: &str = "API_KEY";
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct Image {
-    pub url: String,
     pub alt: String,
-    pub base64: String,
-
+    pub data: String,
+    
     #[serde(skip)]
-    pub data: Option<egui::TextureHandle>,
+    pub egui_data: Option<egui::TextureHandle>,
     #[serde(skip)]
     pub name: String,
     #[serde(skip)]
@@ -42,26 +30,25 @@ pub struct Image {
 
 impl PartialEq for Image {
     fn eq(&self, other: &Self) -> bool {
-        self.url == other.url && self.alt == other.alt
+        self.data == other.data && self.alt == other.alt
     }
 }
 
 impl Debug for Image {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "url: {}, alt: {}", self.url, self.alt)
+        write!(f, "data: {}, alt: {}", self.data, self.alt)
     }
 }
 
 impl Default for Image {
     fn default() -> Self {
         Self {
-            url: "/proxy-image.jpg".into(),
+            data: "/proxy-image.jpg".into(),
             alt: "No image for project".into(),
             is_upload: false,
-            data: None,
+            egui_data: None,
             name: String::new(),
             path: String::new(),
-            base64: String::new(),
         }
     }
 }
@@ -69,7 +56,7 @@ impl Default for Image {
 impl Image {
     pub fn new() -> Self {
         Self {
-            url: "".into(),
+            data: "".into(),
             alt: "".into(),
             ..Default::default()
         }
@@ -125,46 +112,12 @@ pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<
         image.name = file.to_string();
 
         let (base64, data) = from_path(&path).unwrap();
-        image.base64 = base64_from_vec(base64);
+        image.data = base64_from_vec(base64);
 
         let data = context.lock().unwrap().load_texture(file, data);
 
-        image.data = Some(data);
+        image.egui_data = Some(data);
         sender.send(Response::Image(image)).unwrap();
-    } else {
-        sender.send(Response::Nothing).unwrap();
-    }
-}
-
-pub async fn upload(sender: Sender<Response>, mut image: Image) {
-    let url = format!("{}{}", IMGBB_UPLOAD_URL, API_KEY);
-
-    let file = File::open(&image.path).await.unwrap();
-    let reader = Body::wrap_stream(FramedRead::new(file, BytesCodec::new()));
-
-    let form =
-        multipart::Form::new().part("image", Part::stream(reader).file_name(image.name.clone()));
-
-    let client = Client::new();
-    let res = client.post(url).multipart(form).send().await;
-
-    if let Ok(r) = res {
-        let text = r.text().await.unwrap();
-        println!("{:#?}", text);
-        let res: Result<ImgbbResponse, serde_json::Error> = serde_json::from_str(&text);
-
-        if let Ok(r) = res {
-            if r.success {
-                image.url = r.data.url;
-                sender.send(Response::UpdateImage(image)).unwrap();
-            } else {
-                sender.send(Response::Nothing).unwrap();
-            }
-        } else {
-            sender
-                .send(Response::Error(res.err().unwrap().to_string()))
-                .unwrap();
-        }
     } else {
         sender.send(Response::Nothing).unwrap();
     }
