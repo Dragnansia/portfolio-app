@@ -15,6 +15,10 @@ const_env = "0.1.2"
 regex = "1.5.5"
 rustc-serialize = "0.3.24"
 
+[dependencies.egui_extras]
+version = "0.17.0"
+features = ["image"]
+
 [dependencies.tokio]
 version = "1.17.0"
 features = ["full"]

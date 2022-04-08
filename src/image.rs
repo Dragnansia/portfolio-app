@@ -1,15 +1,11 @@
 use crate::app::Response;
 use eframe::egui::{self, Context};
 use native_dialog::FileDialog;
-use regex::Regex;
-use rustc_serialize::{
-    base64::{ToBase64, MIME},
-    hex::ToHex,
-};
+use rustc_serialize::base64::{ToBase64, MIME};
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{mpsc::Sender, Arc, Mutex},
 };
 
@@ -17,7 +13,7 @@ use std::{
 pub struct Image {
     pub alt: String,
     pub data: String,
-    
+
     #[serde(skip)]
     pub egui_data: Option<egui::TextureHandle>,
     #[serde(skip)]
@@ -67,7 +63,7 @@ fn from_path(path: &PathBuf) -> Result<(Vec<u8>, egui::ColorImage), image::Image
     let image = image::io::Reader::open(&path)?.decode()?;
     let size = [image.width() as _, image.height() as _];
 
-    let image_buffer = image.to_rgb8();
+    let image_buffer = image.to_rgba8();
     let flat_samples = image_buffer.as_flat_samples();
     let pixels = flat_samples.as_slice();
 
@@ -77,23 +73,18 @@ fn from_path(path: &PathBuf) -> Result<(Vec<u8>, egui::ColorImage), image::Image
     ))
 }
 
-pub fn file_type(hex: &str) -> &str {
-    if Regex::new(r"^ffd8ffe0").unwrap().is_match(hex) {
-        return "jpeg";
-    } else if Regex::new(r"^89504e47").unwrap().is_match(hex) {
-        return "png";
-    } else if Regex::new(r"^47494638").unwrap().is_match(hex) {
-        return "gif";
+pub fn file_type(extension: &str) -> &str {
+    match extension {
+        "jpg" | "jpeg" => "jpeg",
+        "png" => "png",
+        _ => "",
     }
-
-    panic!("Not valid type file");
 }
 
-pub fn base64_from_vec(vec: Vec<u8>) -> String {
+pub fn base64_from_vec(vec: Vec<u8>, path: &Path) -> String {
     let base64 = vec.to_base64(MIME);
-    let hex = vec.to_hex();
 
-    let ext = file_type(&hex);
+    let ext = file_type(path.extension().unwrap().to_str().unwrap());
     let base64 = base64.replace("\r\n", "");
     return format!("data:image/{};base64,{}", ext, base64);
 }
@@ -112,7 +103,7 @@ pub async fn new_image_file_dialog(sender: Sender<Response>, context: Arc<Mutex<
         image.name = file.to_string();
 
         let (base64, data) = from_path(&path).unwrap();
-        image.data = base64_from_vec(base64);
+        image.data = base64_from_vec(base64, &path);
 
         let data = context.lock().unwrap().load_texture(file, data);
 
